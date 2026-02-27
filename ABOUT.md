@@ -1,0 +1,1 @@
+Users-DB is a lightweight FastAPI auth starter with signup, login, logout, and SQLite storage. It includes bcrypt password hashing, CSRF protection, and session-based authentication.

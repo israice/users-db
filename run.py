@@ -2,8 +2,9 @@ import os
 import secrets
 import sqlite3
 import sys
+from codecs import lookup as lookup_codec
 from contextlib import asynccontextmanager
-from typing import Any, Dict, Tuple
+from typing import Any, Dict, Literal
 
 import bcrypt
 import uvicorn
@@ -30,17 +31,47 @@ def load_settings() -> Dict[str, Any]:
     return loaded_settings
 
 
-def get_nested_setting(settings: Dict[str, Any], path: Tuple[str, ...]) -> Any:
-    current_value = settings
-    for key in path:
-        if not isinstance(current_value, dict) or key not in current_value:
-            dotted_path = ".".join(path)
-            raise RuntimeError(f"Missing required setting: {dotted_path}")
-        current_value = current_value[key]
-    if current_value is None:
-        dotted_path = ".".join(path)
-        raise RuntimeError(f"Setting cannot be null: {dotted_path}")
-    return current_value
+def get_setting(settings: Dict[str, Any], key: str) -> Any:
+    if key not in settings:
+        raise RuntimeError(f"Missing required setting: {key}")
+    setting_value = settings[key]
+    if setting_value is None:
+        raise RuntimeError(f"Setting cannot be null: {key}")
+    return setting_value
+
+
+def get_bool_setting(settings: Dict[str, Any], key: str) -> bool:
+    value = get_setting(settings, key)
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        lowered = value.strip().lower()
+        if lowered == "true":
+            return True
+        if lowered == "false":
+            return False
+    raise RuntimeError(f"Invalid {key}, expected boolean")
+
+
+def get_int_setting(settings: Dict[str, Any], key: str) -> int:
+    value = get_setting(settings, key)
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        raise RuntimeError(f"Invalid {key}, expected integer") from None
+
+
+def get_same_site_setting(
+    settings: Dict[str, Any], key: str
+) -> Literal["lax", "strict", "none"]:
+    value = str(get_setting(settings, key)).strip().lower()
+    if value == "lax":
+        return "lax"
+    if value == "strict":
+        return "strict"
+    if value == "none":
+        return "none"
+    raise RuntimeError(f"Invalid {key}, expected one of: lax, strict, none")
 
 
 SETTINGS = load_settings()
@@ -48,36 +79,50 @@ SESSION_SIGNING_KEY = os.environ.get("SESSION_SIGNING_KEY")
 if not SESSION_SIGNING_KEY:
     raise RuntimeError("SESSION_SIGNING_KEY environment variable is required")
 
-APP_NAME = str(get_nested_setting(SETTINGS, ("app", "name")))
-APP_VERSION = str(get_nested_setting(SETTINGS, ("app", "version")))
-SERVER_HOST = str(get_nested_setting(SETTINGS, ("server", "host")))
-SERVER_PORT = int(get_nested_setting(SETTINGS, ("server", "port")))
-SERVER_RELOAD = bool(get_nested_setting(SETTINGS, ("server", "reload")))
-DATABASE_PATH = str(get_nested_setting(SETTINGS, ("database", "path")))
-SESSION_COOKIE_NAME = str(get_nested_setting(SETTINGS, ("session", "cookie_name")))
-SESSION_SAME_SITE = str(get_nested_setting(SETTINGS, ("session", "same_site")))
-SESSION_HTTPS_ONLY = bool(get_nested_setting(SETTINGS, ("session", "https_only")))
-CSRF_TOKEN_BYTES = int(get_nested_setting(SETTINGS, ("security", "csrf_token_bytes")))
-PYTHON_DISABLE_BYTECODE_CACHE = bool(
-    get_nested_setting(SETTINGS, ("python", "disable_bytecode_cache"))
-)
+APP_NAME = str(get_setting(SETTINGS, "APP_NAME"))
+APP_VERSION = str(get_setting(SETTINGS, "APP_VERSION"))
+SERVER_HOST = str(get_setting(SETTINGS, "SERVER_HOST"))
+SERVER_PORT = get_int_setting(SETTINGS, "SERVER_PORT")
+SERVER_RELOAD = get_bool_setting(SETTINGS, "SERVER_RELOAD")
+DATABASE_PATH = str(get_setting(SETTINGS, "DATABASE_PATH"))
+SESSION_COOKIE_NAME = str(get_setting(SETTINGS, "SESSION_COOKIE_NAME"))
+SESSION_SAME_SITE = get_same_site_setting(SETTINGS, "SESSION_SAME_SITE")
+SESSION_HTTPS_ONLY = get_bool_setting(SETTINGS, "SESSION_HTTPS_ONLY")
+CSRF_TOKEN_BYTES = get_int_setting(SETTINGS, "CSRF_TOKEN_BYTES")
+PYTHON_DISABLE_BYTECODE_CACHE = get_bool_setting(SETTINGS, "PYTHON_DISABLE_BYTECODE_CACHE")
+AUTH_USERNAME_MAX_LENGTH = get_int_setting(SETTINGS, "AUTH_USERNAME_MAX_LENGTH")
+AUTH_PASSWORD_MIN_LENGTH = get_int_setting(SETTINGS, "AUTH_PASSWORD_MIN_LENGTH")
+AUTH_PASSWORD_MAX_LENGTH = get_int_setting(SETTINGS, "AUTH_PASSWORD_MAX_LENGTH")
+TEXT_ENCODING = str(get_setting(SETTINGS, "TEXT_ENCODING")).strip()
 
 if not APP_NAME.strip():
-    raise RuntimeError("Setting cannot be empty: app.name")
+    raise RuntimeError("Setting cannot be empty: APP_NAME")
 if not APP_VERSION.strip():
-    raise RuntimeError("Setting cannot be empty: app.version")
+    raise RuntimeError("Setting cannot be empty: APP_VERSION")
 if not SERVER_HOST.strip():
-    raise RuntimeError("Setting cannot be empty: server.host")
+    raise RuntimeError("Setting cannot be empty: SERVER_HOST")
 if not DATABASE_PATH.strip():
-    raise RuntimeError("Setting cannot be empty: database.path")
+    raise RuntimeError("Setting cannot be empty: DATABASE_PATH")
 if not SESSION_COOKIE_NAME.strip():
-    raise RuntimeError("Setting cannot be empty: session.cookie_name")
-if SESSION_SAME_SITE not in {"lax", "strict", "none"}:
-    raise RuntimeError("Invalid session.same_site, expected one of: lax, strict, none")
+    raise RuntimeError("Setting cannot be empty: SESSION_COOKIE_NAME")
 if not (1 <= SERVER_PORT <= 65535):
-    raise RuntimeError("Invalid server.port, expected integer in range 1..65535")
+    raise RuntimeError("Invalid SERVER_PORT, expected integer in range 1..65535")
 if CSRF_TOKEN_BYTES < 16:
-    raise RuntimeError("Invalid security.csrf_token_bytes, expected integer >= 16")
+    raise RuntimeError("Invalid CSRF_TOKEN_BYTES, expected integer >= 16")
+if AUTH_USERNAME_MAX_LENGTH < 1:
+    raise RuntimeError("Invalid AUTH_USERNAME_MAX_LENGTH, expected integer >= 1")
+if AUTH_PASSWORD_MIN_LENGTH < 1:
+    raise RuntimeError("Invalid AUTH_PASSWORD_MIN_LENGTH, expected integer >= 1")
+if AUTH_PASSWORD_MAX_LENGTH < AUTH_PASSWORD_MIN_LENGTH:
+    raise RuntimeError(
+        "Invalid AUTH_PASSWORD_MAX_LENGTH, expected integer >= AUTH_PASSWORD_MIN_LENGTH"
+    )
+if not TEXT_ENCODING:
+    raise RuntimeError("Setting cannot be empty: TEXT_ENCODING")
+try:
+    lookup_codec(TEXT_ENCODING)
+except LookupError:
+    raise RuntimeError("Invalid TEXT_ENCODING, expected a valid Python codec name") from None
 
 if PYTHON_DISABLE_BYTECODE_CACHE:
     os.environ["PYTHONDONTWRITEBYTECODE"] = "1"
@@ -145,6 +190,10 @@ def render_login_template(
             "request": request,
             "error_message": error_message,
             "csrf_token_value": get_or_create_csrf_token(request),
+            "auth_username_max_length": AUTH_USERNAME_MAX_LENGTH,
+            "auth_password_min_length": AUTH_PASSWORD_MIN_LENGTH,
+            "auth_password_max_length": AUTH_PASSWORD_MAX_LENGTH,
+            "html_charset": TEXT_ENCODING,
         },
         status_code=status_code,
     )
@@ -157,6 +206,7 @@ def render_dashboard_template(request: Request, username: str):
             "request": request,
             "user": username,
             "csrf_token_value": get_or_create_csrf_token(request),
+            "html_charset": TEXT_ENCODING,
         },
     )
 
@@ -188,7 +238,7 @@ def execute_auth_action(
         connection.close()
 
         if existing_user and bcrypt.checkpw(
-            password.encode("utf-8"), existing_user["password"].encode("utf-8")
+            password.encode(TEXT_ENCODING), existing_user["password"].encode(TEXT_ENCODING)
         ):
             request.session[SESSION_USER_KEY] = existing_user["username"]
             request.session[SESSION_CSRF_TOKEN_KEY] = secrets.token_urlsafe(
@@ -209,10 +259,24 @@ def execute_auth_action(
                 "status_code": 400,
                 "error_message": "Username and password are required",
             }
+        if len(username) > AUTH_USERNAME_MAX_LENGTH:
+            return {
+                "ok": False,
+                "status_code": 400,
+                "error_message": f"Username must be at most {AUTH_USERNAME_MAX_LENGTH} characters",
+            }
+        if not (AUTH_PASSWORD_MIN_LENGTH <= len(password) <= AUTH_PASSWORD_MAX_LENGTH):
+            return {
+                "ok": False,
+                "status_code": 400,
+                "error_message": (
+                    f"Password must be {AUTH_PASSWORD_MIN_LENGTH}-{AUTH_PASSWORD_MAX_LENGTH} characters"
+                ),
+            }
         connection = sqlite3.connect(DATABASE_PATH)
         try:
-            password_hash = bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode(
-                "utf-8"
+            password_hash = bcrypt.hashpw(password.encode(TEXT_ENCODING), bcrypt.gensalt()).decode(
+                TEXT_ENCODING
             )
             connection.execute(
                 "INSERT INTO users (username, password) VALUES (?, ?)",

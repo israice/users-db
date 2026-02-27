@@ -1,8 +1,7 @@
 # DONE
 
 # TASKS
-- причесать README.md
-- причесать Settings.yaml
+- обновить стек теги
 
 # FUTURE
 - сахранить .env template в реальном bitwarden

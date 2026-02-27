@@ -1,33 +1,46 @@
-app:
-  # Display name of the FastAPI application (used in app metadata).
-  name: "Users DB"
-  # Application version shown in FastAPI metadata/docs.
-  version: "1.0.0"
+# Display name of the FastAPI application (used in app metadata). ???
+APP_NAME: "Users DB"
+# Application version shown in FastAPI metadata/docs. ???
+APP_VERSION: "1.0.0"
 
-server:
-  # Interface/address where Uvicorn binds.
-  host: "127.0.0.1"
-  # TCP port where the HTTP server listens.
-  port: 5000
-  # Enable auto-reload on code changes (development mode).
-  reload: false
+# Entropy size parameter for CSRF token generation.
+CSRF_TOKEN_BYTES: 32
 
-database:
-  # Path to the SQLite database file.
-  path: "DATA/users.db"
+# --------------------------------------------------------
 
-session:
-  # Name of the signed session cookie.
-  cookie_name: "users_db_session"
-  # SameSite policy for session cookie: lax | strict | none.
-  same_site: "lax"
-  # Send session cookie only over HTTPS when true.
-  https_only: false
+# TCP port where the HTTP server listens.
+SERVER_PORT: 5000
+# Interface/address where Uvicorn binds.
+SERVER_HOST: "127.0.0.1"
+# Enable auto-reload on code changes (development mode). ???
+SERVER_RELOAD: false
 
-security:
-  # Entropy size parameter for CSRF token generation.
-  csrf_token_bytes: 32
+# Path to the SQLite database file.
+DATABASE_PATH: "DATA/users.db"
 
-python:
-  # Disable writing .pyc files and __pycache__ directories.
-  disable_bytecode_cache: true
+# --------------------------------------------------------
+
+# Name of the signed session cookie. ???
+SESSION_COOKIE_NAME: "users_db_session"
+# SameSite policy for session cookie: lax | strict | none. ???
+SESSION_SAME_SITE: "lax"
+# Send session cookie only over HTTPS when true. ???
+SESSION_HTTPS_ONLY: false
+
+# --------------------------------------------------------
+
+# Max allowed username length in auth forms.
+AUTH_USERNAME_MAX_LENGTH: 24
+# Min allowed password length in auth forms.
+AUTH_PASSWORD_MIN_LENGTH: 3
+# Max allowed password length in auth forms.
+AUTH_PASSWORD_MAX_LENGTH: 24
+
+# Text encoding for HTML.
+TEXT_ENCODING: "utf-8"
+
+# Disable __pycache__
+PYTHON_DISABLE_BYTECODE_CACHE: true
+
+# --------------------------------------------------------
+
