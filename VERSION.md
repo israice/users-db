@@ -20,5 +20,5 @@ git push
 python run.py
 
 # DEV LOG
-v0.0.1 - added basic sqlite3 with 321 accounts
 v0.0.2 - added FastAPI and AJAX
+v0.0.3 - added Screenshots
