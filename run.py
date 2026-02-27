@@ -1,9 +1,11 @@
 import os
 import secrets
 import sqlite3
+import subprocess
 import sys
 from codecs import lookup as lookup_codec
 from contextlib import asynccontextmanager
+import json
 from typing import Any, Dict, Literal
 
 import bcrypt
@@ -61,6 +63,139 @@ def get_int_setting(settings: Dict[str, Any], key: str) -> int:
         raise RuntimeError(f"Invalid {key}, expected integer") from None
 
 
+def get_env_bool(key: str, default: bool = False) -> bool:
+    raw_value = os.environ.get(key)
+    if raw_value is None:
+        return default
+    normalized_value = raw_value.strip().lower()
+    if normalized_value in {"1", "true", "yes", "on"}:
+        return True
+    if normalized_value in {"0", "false", "no", "off"}:
+        return False
+    raise RuntimeError(f"Invalid {key}, expected boolean-like value")
+
+
+def get_required_env(key: str) -> str:
+    value = os.environ.get(key)
+    if value is None or not value.strip():
+        raise RuntimeError(f"{key} environment variable is required")
+    return value.strip()
+
+
+def run_bws_command(*arguments: str, access_token: str) -> str:
+    command = ["bws", *arguments]
+    command_env = os.environ.copy()
+    command_env["BWS_ACCESS_TOKEN"] = access_token
+    try:
+        completed_process = subprocess.run(
+            command,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=command_env,
+        )
+    except FileNotFoundError:
+        raise RuntimeError("Bitwarden CLI 'bws' is not installed or not available in PATH") from None
+    if completed_process.returncode != 0:
+        error_output = (completed_process.stderr or completed_process.stdout or "").strip()
+        raise RuntimeError(f"Bitwarden CLI command failed ({' '.join(command)}): {error_output}")
+    return completed_process.stdout
+
+
+def parse_json_payload(payload: str, context: str) -> Any:
+    try:
+        return json.loads(payload)
+    except json.JSONDecodeError:
+        raise RuntimeError(f"Unexpected JSON response from {context}") from None
+
+
+def fetch_session_signing_key_from_bitwarden(
+    secret_key_name: str,
+    project_id: str,
+    access_token: str,
+    require_write: bool,
+    fallback_value: str,
+) -> str:
+    listed_secrets_payload = run_bws_command(
+        "secret", "list", project_id, "--output", "json", access_token=access_token
+    )
+    listed_secrets = parse_json_payload(listed_secrets_payload, "bws secret list")
+    if not isinstance(listed_secrets, list):
+        raise RuntimeError("Unexpected response type from 'bws secret list'")
+
+    matched_secret = next(
+        (
+            item
+            for item in listed_secrets
+            if isinstance(item, dict) and str(item.get("key", "")) == secret_key_name
+        ),
+        None,
+    )
+    if matched_secret is None:
+        if not require_write:
+            raise RuntimeError(
+                f"Bitwarden secret '{secret_key_name}' not found in project '{project_id}'"
+            )
+        value_to_write = fallback_value.strip() or secrets.token_hex(32)
+        run_bws_command(
+            "secret",
+            "create",
+            secret_key_name,
+            value_to_write,
+            project_id,
+            "--output",
+            "json",
+            access_token=access_token,
+        )
+        return value_to_write
+
+    secret_id = str(matched_secret.get("id", "")).strip()
+    if not secret_id:
+        raise RuntimeError(
+            f"Bitwarden secret '{secret_key_name}' found but does not contain an id"
+        )
+    secret_payload = run_bws_command(
+        "secret", "get", secret_id, "--output", "json", access_token=access_token
+    )
+    secret_details = parse_json_payload(secret_payload, "bws secret get")
+    if not isinstance(secret_details, dict):
+        raise RuntimeError("Unexpected response type from 'bws secret get'")
+    secret_value = str(secret_details.get("value", "")).strip()
+    if not secret_value:
+        raise RuntimeError(f"Bitwarden secret '{secret_key_name}' has an empty value")
+    return secret_value
+
+
+def resolve_session_signing_key() -> str:
+    fallback_session_key = os.environ.get("SESSION_SIGNING_KEY", "")
+    if not get_env_bool("BITWARDEN_ENABLED", default=False):
+        if not fallback_session_key.strip():
+            raise RuntimeError("SESSION_SIGNING_KEY environment variable is required")
+        return fallback_session_key.strip()
+
+    provider = os.environ.get("BITWARDEN_PROVIDER", "").strip().lower()
+    if provider != "bws":
+        raise RuntimeError("BITWARDEN_PROVIDER must be set to 'bws' when BITWARDEN_ENABLED=true")
+
+    access_token = get_required_env("BWS_ACCESS_TOKEN")
+    project_id = get_required_env("BWS_PROJECT_ID")
+    require_write = get_env_bool("BWS_REQUIRE_WRITE", default=False)
+    secret_key_name = (
+        os.environ.get("BWS_SESSION_SIGNING_KEY")
+        or os.environ.get("BMS_SESSION_SIGNING_KEY")
+        or "SESSION_SIGNING_KEY"
+    ).strip()
+    if not secret_key_name:
+        raise RuntimeError("BWS_SESSION_SIGNING_KEY must not be empty")
+    return fetch_session_signing_key_from_bitwarden(
+        secret_key_name=secret_key_name,
+        project_id=project_id,
+        access_token=access_token,
+        require_write=require_write,
+        fallback_value=fallback_session_key,
+    )
+
+
 def get_same_site_setting(
     settings: Dict[str, Any], key: str
 ) -> Literal["lax", "strict", "none"]:
@@ -75,9 +210,7 @@ def get_same_site_setting(
 
 
 SETTINGS = load_settings()
-SESSION_SIGNING_KEY = os.environ.get("SESSION_SIGNING_KEY")
-if not SESSION_SIGNING_KEY:
-    raise RuntimeError("SESSION_SIGNING_KEY environment variable is required")
+SESSION_SIGNING_KEY = resolve_session_signing_key()
 
 APP_NAME = str(get_setting(SETTINGS, "APP_NAME"))
 APP_VERSION = str(get_setting(SETTINGS, "APP_VERSION"))

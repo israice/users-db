@@ -23,3 +23,4 @@ python run.py
 v0.0.2 - added FastAPI and AJAX
 v0.0.3 - added Screenshots
 v0.0.4 - added Settings.yaml
+v0.0.5 - added bitwarden support

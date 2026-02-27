@@ -56,6 +56,17 @@ python -c "import secrets; print('SESSION_SIGNING_KEY=' + secrets.token_hex(32))
 # Or manually edit .env with your own secure key
 ```
 
+Optional: enable Bitwarden Secrets Manager (`bws`) in `.env`:
+
+```env
+BITWARDEN_ENABLED=1
+BITWARDEN_PROVIDER=bws
+BWS_ACCESS_TOKEN="your-service-account-token"
+BWS_PROJECT_ID="your-project-id"
+BWS_REQUIRE_WRITE=0
+BWS_SESSION_SIGNING_KEY=SESSION_SIGNING_KEY
+```
+
 ### 3. Run the server
 
 ```bash
@@ -68,7 +79,17 @@ Open http://127.0.0.1:5000
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `SESSION_SIGNING_KEY` | Yes | - | Secure random key for sessions |
+| `SESSION_SIGNING_KEY` | Yes* | - | Secure random key for sessions (required when `BITWARDEN_ENABLED=0`) |
+| `BITWARDEN_ENABLED` | No | `0` | Enable loading `SESSION_SIGNING_KEY` from Bitwarden |
+| `BITWARDEN_PROVIDER` | No | - | Must be `bws` when Bitwarden is enabled |
+| `BWS_ACCESS_TOKEN` | Yes** | - | Bitwarden service account access token |
+| `BWS_PROJECT_ID` | Yes** | - | Bitwarden project ID where secrets are stored |
+| `BWS_REQUIRE_WRITE` | No | `0` | If `1`, create missing secret in Bitwarden using local `SESSION_SIGNING_KEY` (or generated value) |
+| `BWS_SESSION_SIGNING_KEY` | No | `SESSION_SIGNING_KEY` | Secret key name in Bitwarden |
+| `BMS_SESSION_SIGNING_KEY` | No | - | Backward-compatible alias for `BWS_SESSION_SIGNING_KEY` |
+
+\* Required when Bitwarden mode is disabled.  
+\** Required when `BITWARDEN_ENABLED=1`.
 
 ### `settings.yaml`
 
