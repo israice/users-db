@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <title>Login</title>
+    <link rel="stylesheet" href="/assets/auth.css">
+</head>
+<body>
+    <div id="auth-error" class="auth-error-message" style="display: none;"></div>
+    <div class="auth-tabs">
+        <button type="button" class="auth-tab-button is-active" data-target-panel-id="login-panel">Login</button>
+        <button type="button" class="auth-tab-button" data-target-panel-id="register-panel">Register</button>
+    </div>
+
+    <div id="login-panel" class="auth-form-panel is-active">
+        {% if error_message %}<div class="auth-error-message">{{ error_message }}</div>{% endif %}
+        <form method="post" action="/">
+            <input type="hidden" name="auth_action" value="login">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
+            <input name="username" placeholder="Username" required>
+            <input name="password" type="password" placeholder="Password" required>
+            <button>Sign In</button>
+        </form>
+    </div>
+
+    <div id="register-panel" class="auth-form-panel">
+        <form method="post" action="/">
+            <input type="hidden" name="auth_action" value="register">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token_value }}">
+            <input name="username" placeholder="Username" required>
+            <input name="password" type="password" placeholder="Password" required>
+            <button>Sign Up</button>
+        </form>
+    </div>
+
+    <script src="/assets/auth.js"></script>
+</body>
+</html>
